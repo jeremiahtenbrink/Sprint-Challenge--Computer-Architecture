@@ -36,7 +36,7 @@ class CPU:
         self.MDR = [0] * 8
 
         # FL: Flags, see below
-        self.FL = [0] * 8
+        self.FL = 0
 
         self.opcodes = {
             HLT: self.HLT,
@@ -45,13 +45,16 @@ class CPU:
             POP: self.POP,
             PUSH: self.PUSH,
             CALL: self.CALL,
-            RET: self.RET
+            RET: self.RET,
+            JEQ: self.JEQ,
+            JNE: self.JNE,
+            JMP: self.JMP
         }
 
         self.alu_functions = {
             MUL: self.alu,
         }
-        self.show = True
+        self.show = False
         self.load(prog_name)
 
     def read_flags(self, ):
@@ -73,7 +76,7 @@ class CPU:
 
         address = 0
 
-        with open(name, 'r') as file:
+        with open("./" + name, 'r') as file:
             for line in file:
                 try:
                     instruction = int(line[:8], 2)
@@ -115,7 +118,7 @@ class CPU:
             self.log("")
             self.log("")
             self.log(
-                f"Instruction {count}: {bin(self.IR)[2:6]}  {bin(self.IR)[6:]}")
+                f"Instruction {count}: {bin((self.IR >> 4))[2:]}  {bin(self.IR)[-4:]}")
 
             operand_a = self.ram_read(self.PC + 1)
             operand_b = self.ram_read(self.PC + 2)
@@ -127,7 +130,7 @@ class CPU:
                 self.alu(self.IR, operand_a, operand_b)
 
             self.log("Geting set pc flag.")
-            setPC = self._and((self.IR >> 4), 0b0001)
+            setPC = (self.IR >> 4) & 0b0001
             self.log(bin(setPC)[2:])
             if setPC:
                 self.log("The instruction set the PC.")
@@ -142,7 +145,7 @@ class CPU:
         # LDI register immediate
         # Set the value of a register to an integer.
         if self.show:
-            print(f"Moving reg {operand_b} to reg {operand_a}.")
+            print(f"Set reg {operand_a} to {operand_b}.")
         self.register[operand_a] = operand_b
 
     def PRN(self, operand_a, operand_b):
@@ -191,6 +194,31 @@ class CPU:
         self.PC = self.ram_read(self.SP)
         self.SP -= 1
 
+    def JMP(self, a, b):
+        self.log(F"Setting the program counter to {self.register[a]}")
+        self.PC = self.register[a]
+
+    def JEQ(self, a, b):
+        self.log("Jump if eq.")
+        if self.FL == EQ:
+            self.log(f"Eq, setting PC to address {self.register[a]}")
+            self.PC = self.register[a]
+        else:
+            self.log("Did not jump.")
+            operands = self.IR >> 6
+            self.log(f"Incrementing count {operands}");
+            self.PC += operands + 1
+
+    def JNE(self, a, b):
+        self.log("Jump if not equal")
+        if self.FL != EQ:
+            self.log(f"Not EQ, setting PC to address {self.register[a]}")
+            self.PC = self.register[a]
+        else:
+            operands = self.IR >> 6
+            self.log(f"Incrementing count {operands}");
+            self.PC += operands + 1
+
     def alu(self, opp, a, b):
 
         operations = {
@@ -198,38 +226,57 @@ class CPU:
             DIV: self.div,
             ADD: self.add,
             SUB: self.sub,
-            AND: self._and
+            AND: self._and,
+            CMP: self.cmp
         }
 
         if opp not in operations.keys():
             print(f"Error - The alu doesn't have the operation {bin(opp)[2:]}")
             exit()
 
-        self.register[a] = operations[opp](self.register[a], self.register[b])
+        operations[opp](a, b)
 
     def _and(self, a, b):
         self.log(f"And together {a} and {b}")
-        return a & b
+        return self.register[a] & self.register[b]
 
     def sub(self, a, b):
         self.log(f"Subtracting {a} and {b}")
-        return a - b
+        self.register[a] = self.register[a] - self.register[b]
 
     def add(self, a, b):
         self.log(f"Addomg {a} and {b}")
-        return a + b
+        self.register[a] = self.register[a] + self.register[b]
 
     def div(self, a, b):
         self.log(f"Diving {a} and {b}")
-        return a / b
+        self.register[a] = self.register[a] / self.register[b]
 
     def mul(self, a, b):
         self.log(f"Multiplying reg {a} and reg {b}")
-        return a * b
+        self.register[a] = self.register[a] * self.register[b]
 
     def log(self, message):
         if self.show:
             print(message)
+
+    def printReg(self):
+        if self.show:
+            print("Registers")
+            print(self.register)
+
+    def cmp(self, a, b):
+        self.printReg()
+        self.log(f'Comparing {a} and {b}')
+        if self.register[a] == self.register[b]:
+            self.log("EQ")
+            self.FL = EQ
+        elif self.register[a] > self.register[b]:
+            self.log("GT")
+            self.FL = GT
+        else:
+            self.log("LT")
+            self.FL = LT
 
 
 HLT = 0b00000001  # halt
@@ -242,6 +289,10 @@ PUSH = 0b01000101
 
 CALL = 0b01010000
 RET = 0b00010001
+
+JMP = 0b01010100
+JEQ = 0b01010101
+JNE = 0b01010110
 
 # alu
 MUL = 0b10100010  # multiply
@@ -257,3 +308,12 @@ MOD = 0b10100100
 NOT = 0b01101001
 OR = 0b10101010
 XOR = 0b10101011
+
+# Flags
+LT = 0b00000100
+GT = 0b00000010
+EQ = 0b00000001
+
+print(sys.argv)
+if len(sys.argv) > 0:
+    cpu = CPU(sys.argv[1])
